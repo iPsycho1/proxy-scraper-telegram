@@ -1,0 +1,30 @@
+name: Scrape and Send Proxies to Telegram
+
+on:
+  schedule:
+    # اجرای اسکریپت در هر 6 ساعت
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # برای اجرای دستی
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Python scraper
+      env:
+        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+      run: python scraper.py
