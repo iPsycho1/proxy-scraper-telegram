@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import os
+import re
 import concurrent.futures
 
 # آدرس سایتی که برای تست پروکسی استفاده می‌شود (سریع و قابل اعتماد)
@@ -11,6 +12,11 @@ MAX_THREADS = 20
 TIMEOUT = 10
 # آدرس سایت منبع پروکسی
 PROXY_LIST_URL = "https://free-proxy-list.net/"
+
+def escape_markdown_v2(text):
+    """تمام کاراکترهای خاص را برای MarkdownV2 تلگرام escape می‌کند."""
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 def fetch_proxies():
     """لیست اولیه پروکسی‌ها را به همراه جزئیات از سایت منبع استخراج می‌کند."""
@@ -31,15 +37,7 @@ def fetch_proxies():
                 ip = cols[0].text.strip()
                 port = cols[1].text.strip()
                 country = cols[3].text.strip()
-                is_https = cols[6].text.strip()
-                proxy_type = "HTTPS" if is_https == 'yes' else "HTTP"
-                
-                # ذخیره اطلاعات به صورت دیکشنری
-                proxy_info = {
-                    'address': f"{ip}:{port}",
-                    'country': country,
-                    'type': proxy_type
-                }
+                proxy_info = {'address': f"{ip}:{port}", 'country': country}
                 potential_proxies.append(proxy_info)
         
         return potential_proxies
@@ -50,15 +48,12 @@ def fetch_proxies():
 def test_proxy(proxy_info):
     """یک پروکسی را تست می‌کند و در صورت فعال بودن، کل اطلاعات آن را برمی‌گرداند."""
     proxy_address = proxy_info['address']
-    proxy_dict = {
-        'http': f"http://{proxy_address}",
-        'https': f"https://{proxy_address}",
-    }
+    proxy_dict = {'http': f"http://{proxy_address}", 'https': f"https://{proxy_address}"}
     try:
         response = requests.get(TEST_URL, proxies=proxy_dict, timeout=TIMEOUT)
         if response.status_code == 200:
             print(f"✅ پروکسی فعال: {proxy_address}")
-            return proxy_info  # بازگرداندن کل دیکشنری اطلاعات
+            return proxy_info
     except Exception:
         print(f"❌ پروکسی غیرفعال: {proxy_address}")
     return None
@@ -72,26 +67,24 @@ def send_to_telegram(message):
         return
         
     if len(message) > 4096:
-        message = message[:4090] + "\n..."
+        message = message[:4090] + "\n\.\.\."
         
     api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     try:
-        payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'Markdown'}
+        # --- تغییر مهم: استفاده از MarkdownV2 ---
+        payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'MarkdownV2'}
         response = requests.post(api_url, data=payload, timeout=10)
         print(response.json())
     except Exception as e:
         print(f"خطا در ارسال پیام به تلگرام: {e}")
 
 if __name__ == "__main__":
-    print("شروع فرآیند استخراج پروکسی‌ها...")
     potential_proxies = fetch_proxies()
     
     if not potential_proxies:
-        send_to_telegram("❌ لیست اولیه پروکسی‌ها از سایت منبع دریافت نشد.")
+        send_to_telegram("❌ لیست اولیه پروکسی‌ها از سایت منبع دریافت نشد")
     else:
-        print(f"تعداد {len(potential_proxies)} پروکسی پیدا شد. شروع تست...")
         active_proxies = []
-        
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
             future_to_proxy = {executor.submit(test_proxy, p): p for p in potential_proxies}
             for future in concurrent.futures.as_completed(future_to_proxy):
@@ -100,17 +93,16 @@ if __name__ == "__main__":
                     active_proxies.append(result)
         
         if active_proxies:
-            message = f"✅ **تست کامل شد! {len(active_proxies)} پروکسی فعال پیدا شد:**\n\n"
-            
-            # --- این بخش برای فرمت جدید تغییر کرده است ---
+            # --- تغییر مهم: escape کردن محتوا قبل از فرمت‌بندی ---
+            header = f"✅ *تست کامل شد\\! {len(active_proxies)} پروکسی فعال پیدا شد:*\n\n"
             message_lines = []
             for p in active_proxies:
-                # p یک دیکشنری است: {'address': '...', 'country': '...', 'type': '...'}
-                line = f"> `{p['address']}` **{p['country']}**"
+                escaped_address = escape_markdown_v2(p['address'])
+                escaped_country = escape_markdown_v2(p['country'])
+                line = f"> `{escaped_address}` *{escaped_country}*"
                 message_lines.append(line)
-            message += "\n".join(message_lines)
-            # --- پایان بخش تغییر یافته ---
             
+            message = header + "\n".join(message_lines)
             send_to_telegram(message)
         else:
-            send_to_telegram("❌ هیچ پروکسی فعالی پس از تست پیدا نشد.")
+            send_to_telegram("❌ هیچ پروکسی فعالی پس از تست پیدا نشد")
