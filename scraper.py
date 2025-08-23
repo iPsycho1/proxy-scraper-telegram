@@ -71,38 +71,4 @@ def send_to_telegram(message):
         
     api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     try:
-        # --- تغییر مهم: استفاده از MarkdownV2 ---
-        payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'MarkdownV2'}
-        response = requests.post(api_url, data=payload, timeout=10)
-        print(response.json())
-    except Exception as e:
-        print(f"خطا در ارسال پیام به تلگرام: {e}")
-
-if __name__ == "__main__":
-    potential_proxies = fetch_proxies()
-    
-    if not potential_proxies:
-        send_to_telegram("❌ لیست اولیه پروکسی‌ها از سایت منبع دریافت نشد")
-    else:
-        active_proxies = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-            future_to_proxy = {executor.submit(test_proxy, p): p for p in potential_proxies}
-            for future in concurrent.futures.as_completed(future_to_proxy):
-                result = future.result()
-                if result:
-                    active_proxies.append(result)
-        
-        if active_proxies:
-            # --- تغییر مهم: escape کردن محتوا قبل از فرمت‌بندی ---
-            header = f"✅ *تست کامل شد\\! {len(active_proxies)} پروکسی فعال پیدا شد:*\n\n"
-            message_lines = []
-            for p in active_proxies:
-                escaped_address = escape_markdown_v2(p['address'])
-                escaped_country = escape_markdown_v2(p['country'])
-                line = f"> `{escaped_address}` *{escaped_country}*"
-                message_lines.append(line)
-            
-            message = header + "\n".join(message_lines)
-            send_to_telegram(message)
-        else:
-            send_to_telegram("❌ هیچ پروکسی فعالی پس از تست پیدا نشد")
+        payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'MarkdownV2', 'disable_web_page_preview
