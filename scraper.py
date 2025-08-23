@@ -71,4 +71,48 @@ def send_to_telegram(message):
         
     api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     try:
-        payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'MarkdownV2', 'disable_web_page_preview
+        payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'MarkdownV2', 'disable_web_page_preview': True}
+        response = requests.post(api_url, data=payload, timeout=10)
+        print(response.json())
+    except Exception as e:
+        print(f"خطا در ارسال پیام به تلگرام: {e}")
+
+if __name__ == "__main__":
+    # ------------------- این بخش برای اضافه کردن متن و لینک کانال تغییر کرده است -------------------
+    # لینک کانال خود را اینجا وارد کنید
+    CHANNEL_LINK = "https://t.me/YourChannelLink" 
+    
+    # متن پایانی
+    FOOTER_TEXT = "📣 با معرفی کانال و اشتراک پست ها با دوستان خود، ما را حمایت کنید ❤️"
+    # -----------------------------------------------------------------------------------------
+    
+    potential_proxies = fetch_proxies()
+    
+    if not potential_proxies:
+        send_to_telegram("❌ لیست اولیه پروکسی‌ها از سایت منبع دریافت نشد")
+    else:
+        active_proxies = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+            future_to_proxy = {executor.submit(test_proxy, p): p for p in potential_proxies}
+            for future in concurrent.futures.as_completed(future_to_proxy):
+                result = future.result()
+                if result:
+                    active_proxies.append(result)
+        
+        if active_proxies:
+            header = f"✅ *تست کامل شد\\! {len(active_proxies)} پروکسی فعال پیدا شد:*\n\n"
+            message_lines = []
+            for p in active_proxies:
+                escaped_address = escape_markdown_v2(p['address'])
+                escaped_country = escape_markdown_v2(f"({p['country']})") # کشور داخل پرانتز قرار می‌گیرد
+                line = f"> `{escaped_address}` *{escaped_country}*"
+                message_lines.append(line)
+            
+            # آماده‌سازی متن پایانی
+            escaped_footer = escape_markdown_v2(FOOTER_TEXT)
+            footer = f"\n\n{escaped_footer}\n[{escape_markdown_v2(CHANNEL_LINK)}]({CHANNEL_LINK})"
+
+            message = header + "\n".join(message_lines) + footer
+            send_to_telegram(message)
+        else:
+            send_to_telegram("❌ هیچ پروکسی فعالی پس از تست پیدا نشد")
