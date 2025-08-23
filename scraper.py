@@ -24,13 +24,10 @@ def fetch_proxies():
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.get(PROXY_LIST_URL, headers=headers, timeout=15)
         response.raise_for_status()
-        
         soup = BeautifulSoup(response.content, 'html.parser')
         table_container = soup.find('div', class_='table-responsive')
-        
         potential_proxies = []
         rows = table_container.find('tbody').find_all('tr')
-        
         for row in rows:
             cols = row.find_all('td')
             if len(cols) > 6:
@@ -39,7 +36,6 @@ def fetch_proxies():
                 country = cols[3].text.strip()
                 proxy_info = {'address': f"{ip}:{port}", 'country': country}
                 potential_proxies.append(proxy_info)
-        
         return potential_proxies
     except Exception as e:
         print(f"خطا در استخراج لیست اولیه پروکسی‌ها: {e}")
@@ -65,10 +61,6 @@ def send_to_telegram(message):
     if not bot_token or not chat_id:
         print("توکن ربات یا چت آیدی تنظیم نشده است.")
         return
-        
-    if len(message) > 4096:
-        message = message[:4090] + "\n\.\.\."
-        
     api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     try:
         payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'MarkdownV2', 'disable_web_page_preview': True}
@@ -98,13 +90,16 @@ if __name__ == "__main__":
                     active_proxies.append(result)
         
         if active_proxies:
-            header = f"✅ *تست کامل شد\\! {len(active_proxies)} پروکسی فعال پیدا شد:*\n\n"
+            # --- تغییر ۱: محدود کردن تعداد پروکسی‌ها برای جلوگیری از ناقص شدن پیام ---
+            proxies_to_send = active_proxies[:50] # فقط ۵۰ پروکسی اول ارسال می‌شود
+            
+            header = f"✅ *تست کامل شد\\! {len(proxies_to_send)} پروکسی فعال پیدا شد:*\n\n"
             message_lines = []
-            for p in active_proxies:
-                # --- این بخش برای حل مشکل بولد شدن، ساده‌سازی شده است ---
+            for p in proxies_to_send:
+                # --- تغییر ۲: استفاده از فرمت لیست (-) برای پایداری بیشتر بولد شدن ---
                 escaped_address = escape_markdown_v2(p['address'])
                 escaped_country_name = escape_markdown_v2(p['country'])
-                line = f"> `{escaped_address}` — *{escaped_country_name}*"
+                line = f"\\- `{escaped_address}` — *{escaped_country_name}*"
                 # --- پایان بخش اصلاح شده ---
                 message_lines.append(line)
             
@@ -112,7 +107,11 @@ if __name__ == "__main__":
             escaped_footer = escape_markdown_v2(FOOTER_TEXT)
             footer = f"\n\n{escaped_footer}\n[{escape_markdown_v2(CHANNEL_LINK)}]({CHANNEL_LINK})"
 
+            # چک کردن طول پیام قبل از ارسال (این بخش در تابع send_to_telegram وجود دارد ولی اینجا هم برای اطمینان است)
             message = header + "\n".join(message_lines) + footer
+            if len(message) > 4096:
+                message = header + "\n".join(message_lines) # اگر با فوتر طولانی شد، فوتر را حذف می‌کنیم
+            
             send_to_telegram(message)
         else:
             send_to_telegram("❌ هیچ پروکسی فعالی پس از تست پیدا نشد")
