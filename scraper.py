@@ -1,17 +1,16 @@
 import requests
-from bs4 import BeautifulSoup
 import os
 import re
 import concurrent.futures
 
-# آدرس سایتی که برای تست پروکسی استفاده می‌شود (سریع و قابل اعتماد)
+# آدرس سایتی که برای تست پروکسی استفاده می‌شود
 TEST_URL = "http://httpbin.org/ip"
 # حداکثر تعداد پروکسی برای تست همزمان
 MAX_THREADS = 20
 # حداکثر زمان انتظار برای تست هر پروکسی (به ثانیه)
 TIMEOUT = 10
-# آدرس سایت منبع پروکسی
-PROXY_LIST_URL = "https://free-proxy-list.net/"
+# --- منبع جدید و بهتر برای پروکسی‌ها ---
+PROXY_LIST_URL = "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"
 
 def escape_markdown_v2(text):
     """تمام کاراکترهای خاص را برای MarkdownV2 تلگرام escape می‌کند."""
@@ -19,37 +18,36 @@ def escape_markdown_v2(text):
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
 def fetch_proxies():
-    """لیست اولیه پروکسی‌ها را به همراه جزئیات از سایت منبع استخراج می‌کند."""
+    """لیست اولیه پروکسی‌ها را از منبع گیت‌هاب دریافت می‌کند."""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(PROXY_LIST_URL, headers=headers, timeout=15)
+        # دیگر نیازی به BeautifulSoup نیست، فقط فایل متنی را می‌خوانیم
+        response = requests.get(PROXY_LIST_URL, timeout=15)
         response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        table_container = soup.find('div', class_='table-responsive')
-        potential_proxies = []
-        rows = table_container.find('tbody').find_all('tr')
-        for row in rows:
-            cols = row.find_all('td')
-            if len(cols) > 6:
-                ip = cols[0].text.strip()
-                port = cols[1].text.strip()
-                country = cols[3].text.strip()
-                proxy_info = {'address': f"{ip}:{port}", 'country': country}
-                potential_proxies.append(proxy_info)
+        # هر خط از فایل متنی یک پروکسی است
+        potential_proxies = response.text.splitlines()
+        print(f"تعداد {len(potential_proxies)} پروکسی از منبع اولیه دریافت شد.")
         return potential_proxies
     except Exception as e:
         print(f"خطا در استخراج لیست اولیه پروکسی‌ها: {e}")
         return []
 
-def test_proxy(proxy_info):
-    """یک پروکسی را تست می‌کند و در صورت فعال بودن، کل اطلاعات آن را برمی‌گرداند."""
-    proxy_address = proxy_info['address']
+def test_and_get_info(proxy_address):
+    """یک پروکسی را تست می‌کند و در صورت فعال بودن، کشور آن را نیز پیدا می‌کند."""
     proxy_dict = {'http': f"http://{proxy_address}", 'https': f"https://{proxy_address}"}
     try:
+        # مرحله ۱: تست کردن پروکسی
         response = requests.get(TEST_URL, proxies=proxy_dict, timeout=TIMEOUT)
         if response.status_code == 200:
             print(f"✅ پروکسی فعال: {proxy_address}")
-            return proxy_info
+            
+            # مرحله ۲: پیدا کردن کشور با استفاده از API رایگان
+            ip_address = proxy_address.split(':')[0]
+            info_response = requests.get(f"http://ip-api.com/json/{ip_address}", timeout=5)
+            if info_response.status_code == 200:
+                country = info_response.json().get('country', 'Unknown')
+                return {'address': proxy_address, 'country': country}
+            else:
+                return {'address': proxy_address, 'country': 'N/A'} # در صورت خطا در دریافت اطلاعات کشور
     except Exception:
         print(f"❌ پروکسی غیرفعال: {proxy_address}")
     return None
@@ -65,15 +63,12 @@ def send_to_telegram(message):
     try:
         payload = {'chat_id': chat_id, 'text': message, 'parse_mode': 'MarkdownV2', 'disable_web_page_preview': True}
         response = requests.post(api_url, data=payload, timeout=10)
-        print(response.json())
+        print("Telegram API Response:", response.json())
     except Exception as e:
         print(f"خطا در ارسال پیام به تلگرام: {e}")
 
 if __name__ == "__main__":
-    # لینک کانال خود را اینجا وارد کنید
-    CHANNEL_LINK = "@SueProxy1" # <--- این خط را ویرایش کنید
-    
-    # متن پایانی
+    CHANNEL_LINK = "@SueProxy1" # <--- لینک کانال خود را ویرایش کنید
     FOOTER_TEXT = "📣 با معرفی کانال و اشتراک پست ها با دوستان خود، ما را حمایت کنید ❤️"
     
     potential_proxies = fetch_proxies()
@@ -81,37 +76,33 @@ if __name__ == "__main__":
     if not potential_proxies:
         send_to_telegram("❌ لیست اولیه پروکسی‌ها از سایت منبع دریافت نشد")
     else:
-        active_proxies = []
+        active_proxies_with_info = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-            future_to_proxy = {executor.submit(test_proxy, p): p for p in potential_proxies}
+            future_to_proxy = {executor.submit(test_and_get_info, p): p for p in potential_proxies}
             for future in concurrent.futures.as_completed(future_to_proxy):
                 result = future.result()
                 if result:
-                    active_proxies.append(result)
+                    active_proxies_with_info.append(result)
         
-        if active_proxies:
-            # --- تغییر ۱: محدود کردن تعداد پروکسی‌ها برای جلوگیری از ناقص شدن پیام ---
-            proxies_to_send = active_proxies[:50] # فقط ۵۰ پروکسی اول ارسال می‌شود
+        if active_proxies_with_info:
+            proxies_to_send = active_proxies_with_info[:50]
             
             header = f"✅ *تست کامل شد\\! {len(proxies_to_send)} پروکسی فعال پیدا شد:*\n\n"
             message_lines = []
             for p in proxies_to_send:
-                # --- تغییر ۲: استفاده از فرمت لیست (-) برای پایداری بیشتر بولد شدن ---
                 escaped_address = escape_markdown_v2(p['address'])
                 escaped_country_name = escape_markdown_v2(p['country'])
                 line = f"\\- `{escaped_address}` — *{escaped_country_name}*"
-                # --- پایان بخش اصلاح شده ---
                 message_lines.append(line)
             
-            # آماده‌سازی متن پایانی
             escaped_footer = escape_markdown_v2(FOOTER_TEXT)
             footer = f"\n\n{escaped_footer}\n[{escape_markdown_v2(CHANNEL_LINK)}]({CHANNEL_LINK})"
-
-            # چک کردن طول پیام قبل از ارسال (این بخش در تابع send_to_telegram وجود دارد ولی اینجا هم برای اطمینان است)
             message = header + "\n".join(message_lines) + footer
+            
             if len(message) > 4096:
-                message = header + "\n".join(message_lines) # اگر با فوتر طولانی شد، فوتر را حذف می‌کنیم
+                message = header + "\n".join(message_lines)
             
             send_to_telegram(message)
         else:
             send_to_telegram("❌ هیچ پروکسی فعالی پس از تست پیدا نشد")
+
