@@ -102,11 +102,11 @@ if __name__ == "__main__":
         if active_proxies:
             message = f"✅ **تست کامل شد! {len(active_proxies)} پروکسی فعال پیدا شد:**\n\n"
             
-            # --- این بخش تغییر کرده است ---
+            # --- این بخش برای فرمت جدید تغییر کرده است ---
             message_lines = []
             for p in active_proxies:
                 # p یک دیکشنری است: {'address': '...', 'country': '...', 'type': '...'}
-                line = f"`{p['address']}` **({p['country']} - {p['type']})**"
+                line = f"> `{p['address']}` **{p['country']}**"
                 message_lines.append(line)
             message += "\n".join(message_lines)
             # --- پایان بخش تغییر یافته ---
