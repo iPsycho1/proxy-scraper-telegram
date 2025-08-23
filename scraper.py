@@ -78,9 +78,8 @@ def send_to_telegram(message):
         print(f"خطا در ارسال پیام به تلگرام: {e}")
 
 if __name__ == "__main__":
-    # ------------------- این بخش برای اضافه کردن متن و لینک کانال تغییر کرده است -------------------
-    # لینک کانال خود را اینجا وارد کنید
-    CHANNEL_LINK = "https://t.me/YourChannelLink" 
+    # ------------------- لینک کانال خود را اینجا وارد کنید -------------------
+    CHANNEL_LINK = "@SueProxy1" # <--- این خط را ویرایش کنید
     
     # متن پایانی
     FOOTER_TEXT = "📣 با معرفی کانال و اشتراک پست ها با دوستان خود، ما را حمایت کنید ❤️"
@@ -104,8 +103,11 @@ if __name__ == "__main__":
             message_lines = []
             for p in active_proxies:
                 escaped_address = escape_markdown_v2(p['address'])
-                escaped_country = escape_markdown_v2(f"({p['country']})") # کشور داخل پرانتز قرار می‌گیرد
-                line = f"> `{escaped_address}` *{escaped_country}*"
+                # --- این بخش برای حل مشکل بولد شدن اصلاح شده است ---
+                escaped_country_name = escape_markdown_v2(p['country'])
+                formatted_country = f"\\(*{escaped_country_name}*\\)"
+                # --- پایان بخش اصلاح شده ---
+                line = f"> `{escaped_address}` {formatted_country}"
                 message_lines.append(line)
             
             # آماده‌سازی متن پایانی
