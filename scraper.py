@@ -73,7 +73,7 @@ def send_to_telegram(message):
         print(f"خطا در ارسال پیام به تلگرام: {e}")
 
 if __name__ == "__main__":
-    CHANNEL_LINK = "https://t.me/YourChannelLink" # لینک کانال خود را ویرایش کنید
+    CHANNEL_LINK = "@Sueproxy1" # لینک کانال خود را ویرایش کنید
     FOOTER_TEXT = "📣 با معرفی کانال و اشتراک پست ها با دوستان خود، ما را حمایت کنید ❤️"
     
     potential_proxies = fetch_proxies()
