@@ -18,11 +18,6 @@ jobs:
       with:
         python-version: '3.9'
 
-    # --- بخش جدید برای نصب کروم و درایور ---
-    - name: Set up Chrome
-      uses: browser-actions/setup-chrome@v1
-    # --- پایان بخش جدید ---
-
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
