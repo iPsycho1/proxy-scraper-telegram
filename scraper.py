@@ -1,59 +1,90 @@
 import requests
 import os
 import re
+import time
 import concurrent.futures
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-# آدرس سایتی که برای تست پروکسی استفاده می‌شود
+# --- ثابت‌های پروژه ---
+GOLOGIN_URL = "https://gologin.com/free-proxy/"
 TEST_URL = "http://httpbin.org/ip"
-# حداکثر تعداد پروکسی برای تست همزمان
-MAX_THREADS = 20
-# حداکثر زمان انتظار برای تست هر پروکسی (به ثانیه)
-TIMEOUT = 10
-# --- منبع جدید و بهتر برای پروکسی‌ها ---
-PROXY_LIST_URL = "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"
+MAX_THREADS = 10  # به دلیل مصرف بالای منابع در Selenium، تعداد را کمتر می‌کنیم
+TIMEOUT = 15
 
 def escape_markdown_v2(text):
     """تمام کاراکترهای خاص را برای MarkdownV2 تلگرام escape می‌کند."""
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
-def fetch_proxies():
-    """لیست اولیه پروکسی‌ها را از منبع گیت‌هاب دریافت می‌کند."""
+def fetch_proxies_from_gologin():
+    """لیست پروکسی‌ها را با استفاده از Selenium از سایت gologin استخراج می‌کند."""
+    print("راه‌اندازی مرورگر Chrome در حالت headless...")
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    potential_proxies = []
+    driver = None
     try:
-        # دیگر نیازی به BeautifulSoup نیست، فقط فایل متنی را می‌خوانیم
-        response = requests.get(PROXY_LIST_URL, timeout=15)
-        response.raise_for_status()
-        # هر خط از فایل متنی یک پروکسی است
-        potential_proxies = response.text.splitlines()
-        print(f"تعداد {len(potential_proxies)} پروکسی از منبع اولیه دریافت شد.")
-        return potential_proxies
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.get(GOLOGIN_URL)
+        print(f"صفحه {GOLOGIN_URL} باز شد.")
+
+        # منتظر ماندن برای دکمه فیلتر HTTP و کلیک روی آن
+        wait = WebDriverWait(driver, 20) # تا ۲۰ ثانیه صبر می‌کند
+        http_filter_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//label[contains(., 'HTTP')]")))
+        http_filter_button.click()
+        print("روی فیلتر HTTP کلیک شد. منتظر بارگذاری جدول...")
+        
+        # کمی صبر می‌کنیم تا جدول به طور کامل بارگذاری شود
+        time.sleep(5)
+
+        # دریافت سورس صفحه بعد از اجرای جاوا اسکریپت
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'html.parser')
+        
+        proxy_table = soup.find('table', class_='table-striped')
+        if proxy_table:
+            rows = proxy_table.find('tbody').find_all('tr')
+            for row in rows:
+                cols = row.find_all('td')
+                if len(cols) > 1:
+                    proxy_address = cols[0].text.strip()
+                    potential_proxies.append(proxy_address)
+            print(f"تعداد {len(potential_proxies)} پروکسی از جدول استخراج شد.")
+        else:
+            print("جدول پروکسی‌ها در صفحه پیدا نشد.")
+            
     except Exception as e:
-        print(f"خطا در استخراج لیست اولیه پروکسی‌ها: {e}")
-        return []
+        print(f"خطا در فرآیند Selenium: {e}")
+    finally:
+        if driver:
+            driver.quit()
+            
+    return potential_proxies
 
 def test_and_get_info(proxy_address):
     """یک پروکسی را تست می‌کند و در صورت فعال بودن، کشور آن را نیز پیدا می‌کند."""
     proxy_dict = {'http': f"http://{proxy_address}", 'https': f"https://{proxy_address}"}
     try:
-        # مرحله ۱: تست کردن پروکسی
         response = requests.get(TEST_URL, proxies=proxy_dict, timeout=TIMEOUT)
         if response.status_code == 200:
             print(f"✅ پروکسی فعال: {proxy_address}")
-            
-            # مرحله ۲: پیدا کردن کشور با استفاده از API رایگان
             ip_address = proxy_address.split(':')[0]
             info_response = requests.get(f"http://ip-api.com/json/{ip_address}", timeout=5)
-            if info_response.status_code == 200:
-                country = info_response.json().get('country', 'Unknown')
-                return {'address': proxy_address, 'country': country}
-            else:
-                return {'address': proxy_address, 'country': 'N/A'} # در صورت خطا در دریافت اطلاعات کشور
+            country = info_response.json().get('country', 'Unknown') if info_response.status_code == 200 else 'N/A'
+            return {'address': proxy_address, 'country': country}
     except Exception:
         print(f"❌ پروکسی غیرفعال: {proxy_address}")
     return None
 
 def send_to_telegram(message):
-    """پیام را به کانال تلگرام ارسال می‌کند."""
     bot_token = os.getenv('BOT_TOKEN')
     chat_id = os.getenv('CHAT_ID')
     if not bot_token or not chat_id:
@@ -68,10 +99,10 @@ def send_to_telegram(message):
         print(f"خطا در ارسال پیام به تلگرام: {e}")
 
 if __name__ == "__main__":
-    CHANNEL_LINK = "@SueProxy1" # <--- لینک کانال خود را ویرایش کنید
+    CHANNEL_LINK = "https://t.me/YourChannelLink"
     FOOTER_TEXT = "📣 با معرفی کانال و اشتراک پست ها با دوستان خود، ما را حمایت کنید ❤️"
     
-    potential_proxies = fetch_proxies()
+    potential_proxies = fetch_proxies_from_gologin()
     
     if not potential_proxies:
         send_to_telegram("❌ لیست اولیه پروکسی‌ها از سایت منبع دریافت نشد")
@@ -86,8 +117,7 @@ if __name__ == "__main__":
         
         if active_proxies_with_info:
             proxies_to_send = active_proxies_with_info[:50]
-            
-            header = f"✅ *تست کامل شد\\! {len(proxies_to_send)} پروکسی فعال پیدا شد:*\n\n"
+            header = f"✅ *تست کامل شد\\! {len(proxies_to_send)} پروکسی فعال از GoLogin پیدا شد:*\n\n"
             message_lines = []
             for p in proxies_to_send:
                 escaped_address = escape_markdown_v2(p['address'])
@@ -105,4 +135,3 @@ if __name__ == "__main__":
             send_to_telegram(message)
         else:
             send_to_telegram("❌ هیچ پروکسی فعالی پس از تست پیدا نشد")
-
